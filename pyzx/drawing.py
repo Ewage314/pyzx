@@ -236,6 +236,14 @@ def draw_matplotlib(
         else:
             ax.add_patch(patches.Circle(p, 0.1, facecolor='black', edgecolor='black', zorder=1))
 
+
+        sz = 0.2
+        col = 'black'
+        if t == 1: col = 'white'
+        elif t == 2: col = 'black'
+        else: sz = 0.1
+            
+        ax.add_patch(patches.Circle(p, sz, facecolor=col, edgecolor='black', zorder=1))
         if labels: plt.text(p[0]+0.25, p[1]+0.25, str(v), ha='center', color='gray', fontsize=5)
         if a: plt.text(p[0], p[1]-a_offset, phase_to_s(a, t), ha='center', color='blue', fontsize=8)
     

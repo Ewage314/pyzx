@@ -1,0 +1,156 @@
+import sys
+from pyzx.generate import cnots as generate_cnots
+from pyzx.circuit import Circuit, gate_types
+from pyzx.linalg import Mat2
+
+import numpy as np
+from bidict import bidict
+
+from ..routing.parity_maps import CNOT_tracker
+
+
+# We need a CNOT_comb that acts like a CNOT_track but is aware of the holes/virtual qubits
+# We need a Hole class to store the gates that are in a hole and where it connects
+# Finally we need an encompassing class to store the CNOT_comb and what needs to be filled
+# into the holes. This way there is enough info to rebuild the circuit
+
+class CombDecomposition(object):
+    def __init__(self, comb, hole_plugs):
+        self.comb = comb
+        self.hole_plugs = hole_plugs
+
+    @staticmethod
+    def from_circuit(circuit):
+        qubits = circuit.qubits
+        gates = circuit.gates
+        # Find where the holes are
+        open_holes = {} # list of qubits that need to be a virtual qubit to be added eventually
+        hole_plugs = []
+        hole_qubit_mappings = bidict()
+        moving_qubit_mappings = bidict()
+        CNOTs_for_comb = []
+        for gate in gates:
+            if gate.name != "CNOT":
+                # Convert old qubit to new qubit using moving mappings
+                if gate.target in moving_qubit_mappings.keys():
+                    gate.target = moving_qubit_mappings[gate.target]
+                # We have found a none CNOT gate
+                # Check if it is already considered an open hole
+                if gate.target not in open_holes.keys():
+                # Add it's target qubit as an output for the hole
+                    open_holes[gate.target] = [gate]
+                else:
+                    open_holes[gate.target].append(gate)
+
+            else:
+                # Convert old qubit to new qubit using moving mappings
+                if gate.target in moving_qubit_mappings.keys():
+                    gate.target = moving_qubit_mappings[gate.target]
+                    print(gate.target)
+                if gate.control in moving_qubit_mappings.keys():
+                    gate.control = moving_qubit_mappings[gate.control]
+                    print(gate.control)
+
+                if gate.target in open_holes.keys() or gate.control in open_holes.keys():
+                    if gate.target in open_holes.keys():
+                        qubit = gate.target
+                    else:
+                        qubit = gate.control
+                    hole_qubit_mappings[qubit] = qubits # Creating a new qubit and linking it this one
+                    # Check to see if we are mapping a qubit that has already been mapped
+                    # Allowing us to have a mapping from the initial qubit to the current one
+                    if qubit in moving_qubit_mappings.inverse.keys():
+                        moving_qubit_mappings[moving_qubit_mappings.inverse.pop(qubit)] = qubits
+                    # If this mapping isn't in the moving mapping added
+                    if qubit not in moving_qubit_mappings.keys() and qubits not in moving_qubit_mappings.inverse.keys():
+                        moving_qubit_mappings[qubit] = qubits
+                    hole_plugs.append(HolePlug(open_holes.pop(qubit), bidict({qubit : hole_qubit_mappings[qubit]})))
+
+                    qubits = qubits + 1
+
+                    # Need to do this again to correct for newly created mappings
+                    # Convert old qubit to new qubit using moving mappings
+                    if gate.target in hole_qubit_mappings.keys():
+                        gate.target = hole_qubit_mappings[gate.target]
+                        print(gate.target)
+                    if gate.control in hole_qubit_mappings.keys():
+                        gate.control = hole_qubit_mappings[gate.control]
+                        print(gate.control)
+
+                    CNOTs_for_comb.append(gate)
+
+
+
+        # If we have no more gates we need to check we created enough new qubits
+        for qubit in list(open_holes.keys()):
+            if qubit not in hole_qubit_mappings.keys():
+                hole_qubit_mappings[qubit] = qubits
+                # Check to see if we are mapping a qubit that has already been mapped
+                # Allowing us to have a mapping from the initial qubit to the current one
+                if qubit in moving_qubit_mappings.inverse.keys():
+                    moving_qubit_mappings[moving_qubit_mappings.inverse.pop(qubit)] = qubits
+                # If this mapping isn't in the moving mapping added
+                if qubit not in moving_qubit_mappings.keys() and qubits not in moving_qubit_mappings.inverse.keys():
+                    moving_qubit_mappings[qubit] = qubits
+                hole_plugs.append(HolePlug(open_holes.pop(qubit), bidict({qubit : hole_qubit_mappings[qubit]})))
+                qubits = qubits + 1
+
+        # Create CNOTcomb object
+        cnot_comb = CNOTComb(qubits, hole_qubit_mappings)
+        cnot_comb.gates = CNOTs_for_comb
+        cnot_comb.update_matrix()
+
+        # Create CombDecomposition object
+        comb_decomposition = CombDecomposition(cnot_comb, hole_plugs)
+
+        print(open_holes)
+        print(hole_qubit_mappings)
+        print(moving_qubit_mappings)
+        print(gates)
+        print(CNOTs_for_comb)
+        print(cnot_comb.matrix)
+        print(hole_plugs)
+
+        return comb_decomposition
+
+    @staticmethod
+    def to_circuit(comb_decomposition):
+        # Iterate through holes in
+        comb = comb_decomposition.comb
+        hole_plugs = comb_decomposition.hole_plugs
+        print(comb.gates)
+        gates = []
+        qubits = comb.qubits
+        for gate in list(comb.gates):
+            qubit = None
+            # Check if CNOT comes after a hole
+            if gate.target in comb.holes.inverse.keys():
+                qubit = gate.target
+                gate.target = comb.holes.inverse[gate.target]
+            if gate.control in comb.holes.inverse.keys():
+                qubit = gate.control
+                gate.control = comb.holes.inverse[gate.control]
+           ## Check if there is a hole plug that hasn't been used yet
+           #if qubit != None:
+           #    for hole_plug in hole_plugs:
+           #        if gate.target in hole_plug.mapping.inverse.keys():
+           #            gates = gates + hole_plug.gates
+            gates.append(gate)
+        print(gates)
+
+
+
+
+class HolePlug(object):
+    def __init__(self, gates, mapping):
+        self.gates = gates
+        self.mapping = mapping
+
+    def __repr__(self):
+        return f"{self.mapping}: {self.gates}"
+
+
+class CNOTComb(CNOT_tracker):
+    def __init__(self, n_qubits, holes, **kwargs):
+        super().__init__(n_qubits)
+        self.holes = holes

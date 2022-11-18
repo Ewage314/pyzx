@@ -31,6 +31,8 @@ from .local_search.simulated_annealing import anneal
 from .local_search.genetic import GeneticOptimizer
 from .circuit.qasmparser import qasm
 from .circuit.sqasm import sqasm
+from .circuit import Circuit
+from .combs.combs import *
 from . import quantomatic
 from . import generate
 from . import todd

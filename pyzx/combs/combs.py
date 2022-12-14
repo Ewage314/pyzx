@@ -48,10 +48,8 @@ class CombDecomposition(object):
                 # Convert old qubit to new qubit using moving mappings
                 if gate.target in moving_qubit_mappings.keys():
                     gate.target = moving_qubit_mappings[gate.target]
-                    print(gate.target)
                 if gate.control in moving_qubit_mappings.keys():
                     gate.control = moving_qubit_mappings[gate.control]
-                    print(gate.control)
 
                 if gate.target in open_holes.keys() or gate.control in open_holes.keys():
                     if gate.target in open_holes.keys():
@@ -78,10 +76,8 @@ class CombDecomposition(object):
                     # Convert old qubit to new qubit using moving mappings
                     if gate.target in hole_qubit_mappings.keys():
                         gate.target = hole_qubit_mappings[gate.target]
-                        print(gate.target)
                     if gate.control in hole_qubit_mappings.keys():
                         gate.control = hole_qubit_mappings[gate.control]
-                        print(gate.control)
 
                 CNOTs_for_comb.append(gate)
 
@@ -111,6 +107,7 @@ class CombDecomposition(object):
         # Create CombDecomposition object
         comb_decomposition = CombDecomposition(cnot_comb, hole_plugs)
 
+        """
         print(open_holes)
         print(hole_qubit_mappings)
         print(moving_qubit_mappings)
@@ -119,6 +116,7 @@ class CombDecomposition(object):
         print(CNOTs_for_comb)
         print(cnot_comb.matrix)
         print(hole_plugs)
+        """
 
         return comb_decomposition
 
